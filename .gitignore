@@ -1,0 +1,18 @@
+# Environment variables file
+.env
+
+# Firebase Service Account Key (sensitive)
+firebase_service_account.json
+
+# Python cache directories
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor/IDE specific files (e.g., VS Code)
+.vscode/
+.DS_Store
+
+# Virtual environment directory (if you're using one, common practice)
+venv/
+.venv/
