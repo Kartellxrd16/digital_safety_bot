@@ -3,11 +3,9 @@ import httpx
 import base64
 import asyncio
 import urllib.parse
-import hashlib # Not strictly needed if get_vt_url_id is simplified, but harmless
 
-# --- Google Safe Browse API Constants ---
-# CORRECTED: Changed 'Browse' to 'Browse' in both variable name and URL
-GOOGLE_SAFE_Browse_API_URL = "https://safeBrowse.googleapis.com/v4/threatMatches:find"
+# --- Google Safe Browsing API Constants ---
+GOOGLE_SAFE_BROWSING_API_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
 
 # --- VirusTotal API Constants ---
 VIRUSTOTAL_API_BASE_URL = "https://www.virustotal.com/api/v3"
@@ -21,10 +19,10 @@ def get_vt_url_id(url: str) -> str:
 
 async def scan_url(url: str) -> str:
     """
-    Main function to scan a URL, prioritizing Google Safe Browse,
+    Main function to scan a URL, prioritizing Google Safe Browsing,
     then falling back to VirusTotal for deeper analysis if GSB is safe.
     """
-    # 1. Attempt scan with Google Safe Browse first
+    # 1. Attempt scan with Google Safe Browsing first
     gsb_result = await scan_url_with_gsb(url)
 
     # If GSB found a malicious threat, return its verdict immediately
@@ -49,49 +47,45 @@ async def scan_url(url: str) -> str:
 
 async def scan_url_with_gsb(url: str) -> str:
     """
-    Scans a given URL using the Google Safe Browse API.
+    Scans a given URL using the Google Safe Browsing API.
     """
-    # CORRECTED: Changed 'Browse' to 'Browse' here
-    api_key = os.getenv("GOOGLE_SAFE_Browse_API_KEY") # Ensure this is in your .env
+    api_key = os.getenv("GOOGLE_SAFE_BROWSE_API_KEY")
     if not api_key:
-        return "❌ Error: Google Safe Browse API key not configured. Cannot scan URL."
+        return "❌ Error: Google Safe Browsing API key not configured. Cannot scan URL."
 
     payload = {
         "client": {
-            "clientId": "your-digital-safety-bot", # Your bot's name
+            "clientId": "your-digital-safety-bot",
             "clientVersion": "1.0.0"
         },
         "threatInfo": {
             "threatTypes": ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE", "POTENTIALLY_HARMFUL_APPLICATION"],
             "platformTypes": ["ANY_PLATFORM"],
             "threatEntryTypes": ["URL"],
-            "threatEntries": [{"url": url}]
+            "threatEntries": [{"url": urllib.parse.quote(url, safe=':/')}]
         }
     }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # CORRECTED: Changed 'Browse' to 'Browse' in the URL string
             response = await client.post(
-                f"{GOOGLE_SAFE_Browse_API_URL}?key={api_key}",
+                f"{GOOGLE_SAFE_BROWSING_API_URL}?key={api_key}",
                 json=payload
             )
-            response.raise_for_status() # Raise for HTTP errors
+            response.raise_for_status()
             
             result = response.json()
 
             if "matches" in result and len(result["matches"]) > 0:
-                threat_types = ", ".join(
-                    sorted(list(set(m["threatType"] for m in result["matches"])))
-                )
+                threat_types = ", ".join(sorted(list(set(m["threatType"] for m in result["matches"]))))
                 return (
                     f"🚨 **DANGER! This URL is highly malicious!** 🚨\n"
-                    f"Detected as: **{threat_types.replace('_', ' ').title()}** by Google Safe Browse." # Also adjusted text here
+                    f"Detected as: **{threat_types.replace('_', ' ').title()}** by Google Safe Browsing."
                     f"\n\n🛑 **DO NOT CLICK THIS LINK!**"
                 )
             else:
                 return (
-                    f"✅ This URL appears **safe** according to Google Safe Browse.\n" # Also adjusted text here
+                    f"✅ This URL appears **safe** according to Google Safe Browsing.\n"
                     f"No known malware, phishing, or unwanted software detected."
                 )
     except httpx.HTTPStatusError as e:
@@ -100,21 +94,22 @@ async def scan_url_with_gsb(url: str) -> str:
         if status_code == 400:
             return f"❌ **Invalid URL for GSB!** Check the link format. (Details: `{error_detail}`)"
         elif status_code == 403:
-            return f"❌ **Access Denied (Google Safe Browse)!** Check your API key or daily quota. (Details: `{error_detail}`)"
+            return f"❌ **Access Denied (Google Safe Browsing)!** Check your API key or daily quota. (Details: `{error_detail}`)"
+        elif status_code == 404:
+            return "❌ Error: Invalid API endpoint or URL. Check the Safe Browsing API configuration."
         else:
             return (
-                f"❌ An issue occurred with Google Safe Browse scan (HTTP Error {status_code}). "
+                f"❌ An issue occurred with Google Safe Browsing scan (HTTP Error {status_code}). "
                 f"Please try again later. (Details: `{error_detail[:150]}`...)"
             )
     except httpx.RequestError as e:
-        return f"❌ I couldn't connect to Google Safe Browse. Check internet. (Error: `{e}`)"
+        return f"❌ I couldn't connect to Google Safe Browsing. Check internet. (Error: `{e}`)"
     except Exception as e:
         return f"❌ Unexpected error during GSB scan. (Details: `{e}`)"
 
-
 async def scan_url_with_virustotal(url: str) -> str:
     """
-    Scans a given URL using the the VirusTotal API.
+    Scans a given URL using the VirusTotal API.
     This function is called after GSB for deeper analysis if GSB finds no immediate threats.
     """
     api_key = os.getenv("VIRUSTOTAL_API_KEY")
@@ -252,7 +247,6 @@ async def scan_url_with_virustotal(url: str) -> str:
         except Exception as e:
             return f"❌ Unexpected VT scan error. (Details: `{e}`)"
 
-
 async def _process_vt_report_verdict(attributes: dict, public_report_url: str) -> str:
     """Helper to parse VirusTotal results for the verdict."""
     last_analysis_stats = attributes.get("last_analysis_stats", {})
@@ -280,7 +274,7 @@ async def _process_vt_report_verdict(attributes: dict, public_report_url: str) -
         # This covers truly undetected, or cases where stats are all zero (unknown)
         return (
             f"ℹ️ **VT Scan Inconclusive / No Threats Detected.** 🤔\n"
-            f"VirusTotal did not detect immediate threats ({undetected} engines reported undetected if applicable). "
+            f"VirusTotal did not detect immediate threats ({undetected} spaces reported undetected if applicable). "
             f"However, **exercise caution**, especially with new or unknown links. "
             f"\n\n[View details on VirusTotal]({public_report_url})"
         )
